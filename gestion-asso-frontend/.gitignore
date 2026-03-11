@@ -24,4 +24,6 @@ dist-ssr
 *.sw?
 
 # Optional
-./setup-frontend.sh
+.claude
+.env.*
+.env
