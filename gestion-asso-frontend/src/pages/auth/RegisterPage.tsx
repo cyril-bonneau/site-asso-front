@@ -19,26 +19,55 @@ import type { ApiErrorCode } from "@/types";
 const PASSWORD_MIN_LENGTH = 8;
 
 /**
+ * Filtre et assainit un tableau de "reasons" renvoyé par le backend.
+ *
+ * SÉCURITÉ : les "reasons" proviennent du backend et ne doivent pas être
+ * affichées brutes. Même si React échappe le contenu texte (pas de XSS direct),
+ * un backend compromis pourrait injecter des messages trompeurs ou de l'Unicode
+ * malveillant. On filtre donc avec une regex et on limite le nombre affiché.
+ *
+ * @param reasons - Tableau brut de raisons envoyées par le backend
+ * @returns Tableau filtré contenant uniquement des messages sûrs
+ */
+function sanitizeReasons(reasons: string[] | undefined): string[] {
+  if (reasons === undefined || reasons.length === 0) {
+    return [];
+  }
+
+  return (
+    reasons
+      // Ne garder que les chaînes contenant des caractères "normaux" (lettres, chiffres, ponctuation courante)
+      .filter((reason) => /^[\w\s\-\.,àâäéèêëîïôùûüçÀÂÄÉÈÊËÎÏÔÙÛÜÇ']+$/u.test(reason))
+      // Tronquer les messages trop longs pour éviter l'affichage de texte excessif
+      .map((reason) => (reason.length > 100 ? reason.slice(0, 100) + "…" : reason))
+      // Limiter à 3 raisons maximum affichées à l'utilisateur
+      .slice(0, 3)
+  );
+}
+
+/**
  * Mappe un code d'erreur backend vers un message lisible en français.
- * Les "reasons" du backend sont incluses pour WEAK_PASSWORD et VALIDATION_ERROR.
+ * Les "reasons" du backend sont sanitizées avant affichage.
  *
  * @param code    - Code d'erreur retourné par le backend, ou undefined
- * @param reasons - Détails optionnels des règles non respectées
+ * @param reasons - Détails optionnels des règles non respectées (filtrés avant affichage)
  * @returns Message d'erreur à afficher à l'utilisateur
  */
 function getErrorMessage(code: ApiErrorCode | undefined, reasons?: string[]): string {
+  const safeReasons = sanitizeReasons(reasons);
+
   switch (code) {
     case "EMAIL_ALREADY_EXISTS":
       return "Cette adresse email est déjà utilisée. Essayez de vous connecter.";
     case "WEAK_PASSWORD":
-      return reasons !== undefined && reasons.length > 0
-        ? `Mot de passe trop faible : ${reasons.join(", ")}.`
+      return safeReasons.length > 0
+        ? `Mot de passe trop faible : ${safeReasons.join(", ")}.`
         : "Le mot de passe ne respecte pas les critères de sécurité.";
     case "RATE_LIMIT_EXCEEDED":
       return "Trop de tentatives. Veuillez réessayer dans quelques minutes.";
     case "VALIDATION_ERROR":
-      return reasons !== undefined && reasons.length > 0
-        ? `Données invalides : ${reasons.join(", ")}.`
+      return safeReasons.length > 0
+        ? `Données invalides : ${safeReasons.join(", ")}.`
         : "Les données saisies sont invalides.";
     default:
       return "Une erreur est survenue lors de la création du compte. Veuillez réessayer.";

@@ -6,6 +6,8 @@
  * - Il expose les actions login, register, logout, getToken
  * - Au montage, il tente silencieusement de renouveler la session
  *   via le refresh token httpOnly (invisible à JavaScript)
+ * - Il planifie un refresh proactif avant l'expiration de l'access token
+ *   pour éviter un logout brutal en milieu d'action
  *
  * L'access token JWT est stocké exclusivement en mémoire via tokenStore —
  * JAMAIS dans localStorage ou sessionStorage (protection XSS).
@@ -20,10 +22,54 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { MAX_SILENT_REFRESH_RETRIES } from "@/config";
+import { ACCESS_TOKEN_REFRESH_MARGIN_MS, MAX_SILENT_REFRESH_RETRIES } from "@/config";
 import { authService, HttpError } from "@/services";
 import type { AuthStatus, AuthUser, LoginPayload, RegisterPayload } from "@/types";
 import { clearAccessToken, getAccessToken, setAccessToken } from "@/utils/tokenStore";
+
+// ---------------------------------------------------------------------------
+// Utilitaire : lecture du claim "exp" d'un JWT
+// ---------------------------------------------------------------------------
+
+/**
+ * Extrait le timestamp d'expiration (claim "exp") d'un JWT access token.
+ *
+ * Cette fonction ne vérifie PAS la signature du token — elle se contente
+ * de lire le payload base64url pour planifier un refresh avant expiration.
+ * La vérification cryptographique de la signature est effectuée côté backend.
+ *
+ * @param token - JWT access token (format "header.payload.signature")
+ * @returns Timestamp d'expiration en millisecondes depuis epoch, ou null si non lisible
+ */
+function getTokenExpirationMs(token: string): number | null {
+  try {
+    // Un JWT est composé de 3 parties séparées par "."
+    const parts = token.split(".");
+    if (parts.length !== 3 || parts[1] === undefined) return null;
+
+    // Décodage base64url → base64 standard → JSON
+    // base64url remplace "+" par "-" et "/" par "_"
+    const base64Standard = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const payloadJson = atob(base64Standard);
+    const payload: unknown = JSON.parse(payloadJson);
+
+    // Extraction du claim "exp" (secondes depuis epoch)
+    if (
+      typeof payload === "object" &&
+      payload !== null &&
+      "exp" in payload &&
+      typeof (payload as { exp: unknown }).exp === "number"
+    ) {
+      // Conversion en millisecondes pour comparaison avec Date.now()
+      return (payload as { exp: number }).exp * 1000;
+    }
+
+    return null;
+  } catch {
+    // Token malformé ou payload non-JSON : on ne peut pas planifier de refresh
+    return null;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Forme du contexte exposé aux composants enfants
@@ -82,7 +128,8 @@ type AuthProviderProps = {
  * Fournit l'état d'authentification et les actions à toute l'arborescence enfant.
  *
  * Au montage, tente un refresh silencieux de la session via le cookie httpOnly.
- * Si le refresh réussit → l'utilisateur est considéré authentifié.
+ * Si le refresh réussit → l'utilisateur est considéré authentifié et un timer
+ * de refresh proactif est planifié avant l'expiration du token.
  * Si le refresh échoue (401) → l'utilisateur est redirigé vers /login par les guards.
  */
 export function AuthProvider({ children }: AuthProviderProps) {
@@ -92,6 +139,98 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // Ref pour éviter les mises à jour d'état sur un composant démonté
   // (ex: si l'utilisateur navigue vite avant que le refresh se termine)
   const isCancelledRef = useRef(false);
+
+  // ID du setTimeout de refresh proactif, pour pouvoir l'annuler (logout, démontage)
+  const refreshTimerIdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Ref vers la dernière version de scheduleProactiveRefresh.
+  // Les useCallback avec deps [] capturent une closure — utiliser cette ref
+  // dans les callbacks garantit qu'ils appellent toujours la version courante.
+  const scheduleProactiveRefreshRef = useRef<((token: string) => void) | null>(null);
+
+  // ---------------------------------------------------------------------------
+  // Refresh proactif avant expiration
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Annule le timer de refresh proactif en cours, s'il existe.
+   * À appeler avant de programmer un nouveau timer ou lors de la déconnexion.
+   */
+  function cancelProactiveRefreshTimer(): void {
+    if (refreshTimerIdRef.current !== null) {
+      clearTimeout(refreshTimerIdRef.current);
+      refreshTimerIdRef.current = null;
+    }
+  }
+
+  /**
+   * Planifie un appel à /refresh avant l'expiration de l'access token.
+   *
+   * Lit le claim "exp" du JWT pour calculer le délai exact, puis déclenche
+   * un refresh ACCESS_TOKEN_REFRESH_MARGIN_MS avant l'expiration. Le nouveau
+   * token obtenu replanifie automatiquement le timer suivant (chaîne continue).
+   *
+   * Si le refresh proactif échoue, l'utilisateur est déconnecté silencieusement
+   * plutôt que de le laisser rencontrer une erreur 401 en pleine action.
+   *
+   * @param accessToken - JWT access token dont on lit le claim "exp"
+   */
+  function scheduleProactiveRefresh(accessToken: string): void {
+    // Annuler tout timer précédent avant d'en programmer un nouveau
+    cancelProactiveRefreshTimer();
+
+    const expirationMs = getTokenExpirationMs(accessToken);
+    if (expirationMs === null) {
+      // Token sans claim "exp" lisible : impossible de planifier automatiquement
+      return;
+    }
+
+    // Calculer le délai : on veut refresher ACCESS_TOKEN_REFRESH_MARGIN_MS avant expiration
+    const delayMs = expirationMs - ACCESS_TOKEN_REFRESH_MARGIN_MS - Date.now();
+
+    if (delayMs <= 0) {
+      // Le token expire dans moins que la marge — pas besoin de timer,
+      // la prochaine requête protégée déclenchera un refresh via 401
+      return;
+    }
+
+    refreshTimerIdRef.current = setTimeout(() => {
+      if (isCancelledRef.current) return;
+
+      void authService
+        .refreshAccessToken()
+        .then((response) => {
+          if (isCancelledRef.current) return;
+
+          setAccessToken(response.accessToken);
+          setUser({
+            userId: response.userId,
+            firstName: response.firstName,
+            lastName: response.lastName,
+            email: response.email,
+            privilege: response.privilege,
+          });
+
+          // Replanifier un refresh pour le nouveau token
+          // On utilise la ref pour éviter les problèmes de closure périmée
+          scheduleProactiveRefreshRef.current?.(response.accessToken);
+        })
+        .catch(() => {
+          if (isCancelledRef.current) return;
+
+          // Le refresh proactif a échoué (session expirée côté serveur) :
+          // déconnexion silencieuse plutôt qu'une erreur surprise plus tard
+          cancelProactiveRefreshTimer();
+          clearAccessToken();
+          setUser(null);
+          setStatus("unauthenticated");
+        });
+    }, delayMs);
+  }
+
+  // Mettre à jour la ref à chaque rendu pour qu'elle pointe toujours
+  // vers la version courante de scheduleProactiveRefresh
+  scheduleProactiveRefreshRef.current = scheduleProactiveRefresh;
 
   // ---------------------------------------------------------------------------
   // Refresh silencieux au montage
@@ -112,10 +251,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // Si le composant a été démonté entre-temps, on abandonne
         if (isCancelledRef.current) return;
 
-        // Succès : on stocke le token et on marque l'utilisateur comme authentifié
+        // Succès : stocker le token et le profil, puis planifier le prochain refresh
         setAccessToken(response.accessToken);
-        setUser({ userId: response.userId });
+        setUser({
+          userId: response.userId,
+          firstName: response.firstName,
+          lastName: response.lastName,
+          email: response.email,
+          privilege: response.privilege,
+        });
         setStatus("authenticated");
+        scheduleProactiveRefresh(response.accessToken);
       } catch (error) {
         if (isCancelledRef.current) return;
 
@@ -135,10 +281,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     void attemptSilentRefresh(MAX_SILENT_REFRESH_RETRIES);
 
-    // Cleanup : marque le composant comme démonté pour éviter les setState tardifs
+    // Cleanup : marquer le composant comme démonté + annuler le timer proactif
     return () => {
       isCancelledRef.current = true;
+      cancelProactiveRefreshTimer();
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -151,9 +299,23 @@ export function AuthProvider({ children }: AuthProviderProps) {
    */
   const login = useCallback(async (payload: LoginPayload): Promise<void> => {
     const response = await authService.login(payload);
+
+    // Stockage du token en mémoire (jamais en localStorage)
     setAccessToken(response.accessToken);
-    setUser({ userId: response.userId });
+
+    // Stockage du profil complet pour éviter un appel supplémentaire au backend
+    setUser({
+      userId: response.userId,
+      firstName: response.firstName,
+      lastName: response.lastName,
+      email: response.email,
+      privilege: response.privilege,
+    });
+
     setStatus("authenticated");
+
+    // Planifier le refresh proactif via la ref pour éviter la closure périmée
+    scheduleProactiveRefreshRef.current?.(response.accessToken);
   }, []);
 
   /**
@@ -162,16 +324,33 @@ export function AuthProvider({ children }: AuthProviderProps) {
    */
   const register = useCallback(async (payload: RegisterPayload): Promise<void> => {
     const response = await authService.register(payload);
+
+    // Stockage du token en mémoire (jamais en localStorage)
     setAccessToken(response.accessToken);
-    setUser({ userId: response.userId });
+
+    // Stockage du profil complet renvoyé à la création du compte
+    setUser({
+      userId: response.userId,
+      firstName: response.firstName,
+      lastName: response.lastName,
+      email: response.email,
+      privilege: response.privilege,
+    });
+
     setStatus("authenticated");
+
+    // Planifier le refresh proactif via la ref pour éviter la closure périmée
+    scheduleProactiveRefreshRef.current?.(response.accessToken);
   }, []);
 
   /**
    * Déconnecte l'utilisateur côté frontend.
+   * Annule le timer de refresh proactif avant de vider la session.
    * L'expiration du cookie httpOnly sera gérée côté serveur.
    */
   const logout = useCallback((): void => {
+    // Annuler le timer proactif en premier : évite un refresh fantôme après logout
+    cancelProactiveRefreshTimer();
     clearAccessToken();
     setUser(null);
     setStatus("unauthenticated");

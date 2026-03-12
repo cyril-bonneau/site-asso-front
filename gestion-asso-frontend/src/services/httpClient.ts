@@ -9,6 +9,28 @@
  *
  * On utilise fetch natif (pas Axios) pour minimiser les dépendances
  * et rester proche des standards web modernes.
+ *
+ * -------------------------------------------------------------------------
+ * SÉCURITÉ — CSRF avec SameSite=None
+ * -------------------------------------------------------------------------
+ * Le cookie de refresh token est configuré avec SameSite=None; Secure côté
+ * backend. C'est obligatoire parce que le frontend (CloudFront) et l'API
+ * (API Gateway) sont sur des domaines différents — sans SameSite=None, le
+ * navigateur ne transmettrait pas le cookie sur les requêtes cross-origin.
+ *
+ * En contrepartie, SameSite=None ne protège PAS contre le CSRF :
+ * le cookie est envoyé depuis n'importe quel domaine. Deux défenses
+ * compensatoires sont donc mises en place :
+ *
+ * 1. Header "X-Requested-With: XMLHttpRequest" (côté frontend — ce fichier)
+ *    Les formulaires HTML natifs et les balises <img>/<script> ne peuvent pas
+ *    envoyer de headers custom. Seul fetch / XMLHttpRequest le peut.
+ *    Le backend DOIT vérifier la présence de ce header pour rejeter les
+ *    requêtes provenant de pages malveillantes qui utilisent des formulaires.
+ *
+ * 2. Vérification de l'header "Origin" (côté backend — AWS Lambda)
+ *    Le backend doit s'assurer que Origin correspond au domaine frontend
+ *    autorisé (configuré dans CORS). C'est la défense principale.
  */
 
 import { API_BASE_URL } from "@/config";
@@ -82,6 +104,13 @@ async function request<TResponse>(
   // Construction des headers
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+
+    // SÉCURITÉ — Mitigation CSRF pour SameSite=None
+    // Les formulaires HTML natifs ne peuvent pas envoyer ce header custom.
+    // Seul du code JavaScript (fetch / XMLHttpRequest) peut l'ajouter.
+    // Le backend doit valider sa présence pour distinguer les requêtes légitimes
+    // des attaques CSRF envoyées depuis un formulaire sur un site malveillant.
+    "X-Requested-With": "XMLHttpRequest",
   };
 
   // Injection du token Bearer uniquement si fourni

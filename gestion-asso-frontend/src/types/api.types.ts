@@ -22,24 +22,35 @@ export type ApiResponse<TData> = {
 
 /**
  * Réponse renvoyée par les endpoints /login et /registerUser.
- * Contient l'access token JWT à stocker en mémoire (jamais en localStorage).
+ * Contient l'access token JWT ainsi que les informations de profil complètes
+ * de l'utilisateur, permettant d'alimenter le contexte Auth dès la connexion.
  */
 export type AuthSuccessResponse = {
   ok: true;
   userId: string;
   message: string;
   accessToken: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  /** Liste des rôles de l'utilisateur (ex: ["USER"] ou ["USER", "ADMIN"]) */
+  privilege: string[];
 };
 
 /**
  * Réponse renvoyée par l'endpoint GET /refreshToken.
- * Identique à AuthSuccessResponse mais sans le champ "ok"
- * (le backend retourne directement les données sans enveloppe "ok").
+ * Contient un nouvel access token et les informations de profil complètes,
+ * ce qui évite un appel supplémentaire pour récupérer le profil après le refresh.
  */
 export type RefreshTokenResponse = {
   userId: string;
   message: string;
   accessToken: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  /** Liste des rôles de l'utilisateur (ex: ["USER"] ou ["USER", "ADMIN"]) */
+  privilege: string[];
 };
 
 // ---------------------------------------------------------------------------

@@ -45,9 +45,16 @@ export function MainLayout() {
 
         {/* Informations utilisateur + bouton déconnexion */}
         <div className="flex items-center gap-4">
-          {/* Affichage de l'email ou de l'userId si l'email n'est pas chargé */}
+          {/*
+           * Affichage du nom de l'utilisateur dans l'ordre de priorité :
+           * 1. Prénom + Nom si les deux sont disponibles
+           * 2. Email seul sinon
+           * 3. userId en dernier recours
+           */}
           <span className="hidden text-sm text-slate-600 sm:block">
-            {user?.email ?? user?.userId ?? "Utilisateur"}
+            {user?.firstName !== undefined && user?.lastName !== undefined
+              ? `${user.firstName} ${user.lastName}`
+              : (user?.email ?? user?.userId ?? "Utilisateur")}
           </span>
 
           <button
@@ -68,7 +75,9 @@ export function MainLayout() {
         <aside className="hidden w-56 flex-shrink-0 border-r border-slate-200 bg-white md:block">
           <nav className="flex flex-col gap-1 p-3">
             <NavItem to="/dashboard" label="Tableau de bord" />
-            {/* D'autres liens seront ajoutés ici au fur et à mesure */}
+            <NavItem to="/associations" label="Associations" />
+            <NavItem to="/associations/new" label="Nouvelle association" />
+            <NavItem to="/account" label="Mon compte" />
           </nav>
         </aside>
 

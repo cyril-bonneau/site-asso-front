@@ -30,7 +30,12 @@ export type AuthUser = {
   email?: string;
   firstName?: string;
   lastName?: string;
-  privilege?: UserPrivilege;
+  /**
+   * Liste des rôles de l'utilisateur tels que renvoyés par le backend.
+   * Exemple : ["USER"] ou ["USER", "ADMIN"]
+   * Utiliser UserPrivilege pour valider un rôle spécifique.
+   */
+  privilege?: string[];
 };
 
 // ---------------------------------------------------------------------------

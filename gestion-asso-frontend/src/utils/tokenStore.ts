@@ -13,7 +13,17 @@
  * inaccessible depuis l'extérieur sauf via les fonctions exportées.
  */
 
-/** Valeur en mémoire de l'access token. null = pas de session active. */
+/**
+ * Valeur en mémoire de l'access token. null = pas de session active.
+ *
+ * SÉCURITÉ — NE JAMAIS logger cette variable ni la valeur de getAccessToken().
+ * Un token JWT dans les DevTools ou une capture d'écran partagée expose
+ * immédiatement la session de l'utilisateur.
+ *
+ * Si vous devez déboguer, loggez uniquement les premiers caractères :
+ *   console.debug("Token présent:", currentAccessToken !== null);
+ *   console.debug("Token début:", currentAccessToken?.slice(0, 10) + "...");
+ */
 let currentAccessToken: string | null = null;
 
 /**

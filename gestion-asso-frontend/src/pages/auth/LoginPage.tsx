@@ -24,9 +24,11 @@ import type { ApiErrorCode } from "@/types";
 function getErrorMessage(code: ApiErrorCode | undefined): string {
   switch (code) {
     case "WRONG_CREDENTIALS":
-      return "Email ou mot de passe incorrect.";
     case "AUTH_NOT_FOUND":
-      return "Aucun compte trouvé avec cet email.";
+      // SÉCURITÉ : message identique pour les deux cas d'erreur d'authentification.
+      // Distinguer "email inconnu" de "mauvais mot de passe" permettrait à un attaquant
+      // d'énumérer les comptes existants (User Enumeration Attack).
+      return "Email ou mot de passe incorrect.";
     case "RATE_LIMIT_EXCEEDED":
       return "Trop de tentatives. Veuillez réessayer dans quelques minutes.";
     default:
