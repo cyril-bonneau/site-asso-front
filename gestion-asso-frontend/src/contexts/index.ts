@@ -10,3 +10,4 @@
 
 export { AuthProvider, useAuth } from "./AuthContext";
 export { QueryProvider, queryClient } from "./QueryProvider";
+export { ThemeProvider, useTheme } from "./ThemeContext";

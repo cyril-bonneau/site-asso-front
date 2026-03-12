@@ -24,9 +24,9 @@ export function DashboardPage() {
     <div className="flex flex-col gap-6">
       {/* En-tête de la page */}
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Tableau de bord</h1>
-        <p className="mt-1 text-slate-500">
-          Bienvenue, <span className="font-medium text-slate-700">{displayName}</span> !
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Tableau de bord</h1>
+        <p className="mt-1 text-slate-500 dark:text-slate-400">
+          Bienvenue, <span className="font-medium text-slate-700 dark:text-slate-200">{displayName}</span> !
         </p>
       </div>
 
@@ -73,10 +73,10 @@ type DashboardCardProps = {
  */
 function DashboardCard({ title, count, description }: DashboardCardProps) {
   return (
-    <div className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-      <h2 className="text-sm font-medium text-slate-500">{title}</h2>
-      <p className="mt-2 text-3xl font-bold text-slate-900">{count}</p>
-      <p className="mt-1 text-xs text-slate-400">{description}</p>
+    <div className="rounded-xl bg-white dark:bg-slate-800 p-5 shadow-sm ring-1 ring-slate-200 dark:ring-slate-700 transition-colors duration-200">
+      <h2 className="text-sm font-medium text-slate-500 dark:text-slate-400">{title}</h2>
+      <p className="mt-2 text-3xl font-bold text-slate-900 dark:text-slate-100">{count}</p>
+      <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">{description}</p>
     </div>
   );
 }

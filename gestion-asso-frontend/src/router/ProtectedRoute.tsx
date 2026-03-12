@@ -26,11 +26,11 @@ export function ProtectedRoute() {
   // On affiche un indicateur de chargement pour éviter un flash de redirection.
   if (status === "idle" || status === "loading") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-900 transition-colors duration-200">
         <div className="flex flex-col items-center gap-3">
           {/* Spinner animé */}
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
-          <p className="text-sm text-slate-500">Vérification de la session…</p>
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 dark:border-slate-700 border-t-blue-600" />
+          <p className="text-sm text-slate-500 dark:text-slate-400">Vérification de la session…</p>
         </div>
       </div>
     );

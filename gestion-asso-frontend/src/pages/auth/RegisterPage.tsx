@@ -138,13 +138,13 @@ export function RegisterPage() {
 
   return (
     <div>
-      <h2 className="mb-6 text-xl font-semibold text-slate-800">Créer un compte</h2>
+      <h2 className="mb-6 text-xl font-semibold text-slate-800 dark:text-slate-100">Créer un compte</h2>
 
       <form onSubmit={(e) => void handleSubmit(e)} noValidate className="flex flex-col gap-4">
         {/* Prénom et nom sur 2 colonnes */}
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="firstName" className="text-sm font-medium text-slate-700">
+            <label htmlFor="firstName" className="text-sm font-medium text-slate-700 dark:text-slate-200">
               Prénom
             </label>
             <input
@@ -155,12 +155,12 @@ export function RegisterPage() {
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
               placeholder="Marie"
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-800 transition"
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="lastName" className="text-sm font-medium text-slate-700">
+            <label htmlFor="lastName" className="text-sm font-medium text-slate-700 dark:text-slate-200">
               Nom
             </label>
             <input
@@ -171,14 +171,14 @@ export function RegisterPage() {
               value={lastName}
               onChange={(e) => setLastName(e.target.value)}
               placeholder="Dupont"
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-800 transition"
             />
           </div>
         </div>
 
         {/* Email */}
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="email" className="text-sm font-medium text-slate-700">
+          <label htmlFor="email" className="text-sm font-medium text-slate-700 dark:text-slate-200">
             Adresse email
           </label>
           <input
@@ -189,13 +189,13 @@ export function RegisterPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="vous@exemple.fr"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+            className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-800 transition"
           />
         </div>
 
         {/* Mot de passe */}
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="password" className="text-sm font-medium text-slate-700">
+          <label htmlFor="password" className="text-sm font-medium text-slate-700 dark:text-slate-200">
             Mot de passe
           </label>
           <input
@@ -206,13 +206,13 @@ export function RegisterPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="8 caractères minimum"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+            className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-800 transition"
           />
         </div>
 
         {/* Confirmation du mot de passe */}
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="confirmPassword" className="text-sm font-medium text-slate-700">
+          <label htmlFor="confirmPassword" className="text-sm font-medium text-slate-700 dark:text-slate-200">
             Confirmer le mot de passe
           </label>
           <input
@@ -223,13 +223,13 @@ export function RegisterPage() {
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             placeholder="Répétez le mot de passe"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+            className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-800 transition"
           />
         </div>
 
         {/* Message d'erreur */}
         {errorMessage !== null && (
-          <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+          <p role="alert" className="rounded-lg bg-red-50 dark:bg-red-950/50 px-3 py-2 text-sm text-red-600 dark:text-red-400">
             {errorMessage}
           </p>
         )}
@@ -245,9 +245,9 @@ export function RegisterPage() {
       </form>
 
       {/* Lien vers la connexion */}
-      <p className="mt-6 text-center text-sm text-slate-500">
+      <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-400">
         Déjà un compte ?{" "}
-        <Link to="/login" className="font-medium text-blue-600 hover:text-blue-700">
+        <Link to="/login" className="font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">
           Se connecter
         </Link>
       </p>

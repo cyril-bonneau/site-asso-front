@@ -8,11 +8,20 @@
 @import "tailwindcss";
 
 /*
+ * Mode sombre basé sur la classe "dark" sur <html>.
+ * Remplace la stratégie par défaut (prefers-color-scheme media query)
+ * par une stratégie class, ce qui permet un toggle manuel.
+ * Le hook useDarkMode gère l'ajout/retrait de cette classe.
+ */
+@variant dark (&:where(.dark, .dark *));
+
+/*
  * Paramètres de base du body
  * - antialiased : lissage des polices pour une meilleure lisibilité
+ * - transition sur background-color pour un basculement de thème fluide
  */
 @layer base {
   body {
-    @apply antialiased;
+    @apply antialiased bg-slate-50 dark:bg-slate-900 transition-colors duration-200;
   }
 }
