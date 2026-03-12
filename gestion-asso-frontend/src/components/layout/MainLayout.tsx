@@ -126,6 +126,7 @@ function NavItem({ to, label }: NavItemProps) {
   return (
     <NavLink
       to={to}
+      end
       className={({ isActive }) =>
         [
           "rounded-lg px-3 py-2 text-sm font-medium transition-colors",
