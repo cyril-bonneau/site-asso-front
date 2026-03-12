@@ -54,7 +54,7 @@ export async function register(payload: RegisterPayload): Promise<AuthSuccessRes
  * @throws HttpError avec status 401 si le refresh token est absent, invalide ou expiré
  */
 export async function refreshAccessToken(): Promise<RefreshTokenResponse> {
-  return httpClient.get<RefreshTokenResponse>("/refreshToken");
+  return httpClient.post<RefreshTokenResponse>("/refresh");
 }
 
 /**
