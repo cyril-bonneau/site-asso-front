@@ -1,0 +1,14 @@
+{
+    "name": "site-asso-frontend",
+    "private": true,
+    "type": "module",
+    "description": "Infra et déploiement du frontend site-asso (S3 + CloudFront)",
+    "scripts": {
+        "deploy:infra:dev": "serverless deploy --config serverless.frontend.yml --stage dev",
+        "deploy:infra:prod": "serverless deploy --config serverless.frontend.yml --stage prod",
+        "remove:infra:dev": "serverless remove --config serverless.frontend.yml --stage dev"
+    },
+    "devDependencies": {
+        "serverless": "^4.32.0"
+    }
+}

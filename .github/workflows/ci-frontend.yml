@@ -1,0 +1,208 @@
+# ===========================================================================
+# CI/CD Frontend — Build Vite + Deploy S3 + Invalidation CloudFront
+#
+# Ce pipeline :
+# 1. Déploie l'infra frontend (S3 + CloudFront) via Serverless Framework
+# 2. Récupère l'URL de l'API backend depuis les outputs CloudFormation
+# 3. Build le projet Vite avec l'URL injectée
+# 4. Synchronise le dossier dist/ vers le bucket S3
+# 5. Invalide le cache CloudFront pour servir la nouvelle version
+#
+# Pré-requis :
+# - Le stack backend (site-asso-api) doit être déployé sur le même stage
+# - Le rôle IAM github_pipeline_access doit avoir cloudfront:CreateInvalidation
+# ===========================================================================
+
+name: CI/CD site-asso Frontend
+
+on:
+  push:
+    branches:
+      - master
+      - dev
+      - feature/**
+    paths:
+      - 'gestion-asso-frontend/**'
+      - 'serverless.frontend.yml'
+      - '.github/workflows/ci-frontend.yml'
+  pull_request:
+    paths:
+      - 'gestion-asso-frontend/**'
+
+# Évite les déploiements concurrents sur la même branche
+concurrency:
+  group: site-asso-frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # =========================================================================
+  # Job 1 — Déploiement de l'infra frontend (S3 + CloudFront)
+  # =========================================================================
+  deploy-infra:
+    name: Deploy Frontend Infra
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # --- Détermination du stage depuis la branche ---
+      - name: Set STAGE from branch
+        run: |
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          echo "Current branch: $BRANCH"
+
+          if [ "$BRANCH" = "master" ]; then
+            echo "STAGE=prod" >> $GITHUB_ENV
+          elif [ "$BRANCH" = "dev" ]; then
+            echo "STAGE=dev" >> $GITHUB_ENV
+          else
+            echo "STAGE=sandbox" >> $GITHUB_ENV
+          fi
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      # Installation de Serverless Framework (devDependency du package.json racine)
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: eu-west-3
+          role-to-assume: arn:aws:iam::011664843444:role/github_pipeline_access
+          role-session-name: site-asso-frontend-ci
+
+      - name: Deploy frontend infra
+        env:
+          SERVERLESS_ACCESS_KEY: ${{ secrets.SERVERLESS_ACCESS_KEY }}
+        run: npx serverless deploy --config serverless.frontend.yml --stage $STAGE
+
+  # =========================================================================
+  # Job 2 — Build Vite + Déploiement S3 + Invalidation CloudFront
+  # =========================================================================
+  build-and-deploy:
+    name: Build & Deploy
+    needs: deploy-infra
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # --- Détermination du stage (même logique que le job précédent) ---
+      - name: Set STAGE from branch
+        run: |
+          BRANCH="${GITHUB_REF#refs/heads/}"
+
+          if [ "$BRANCH" = "master" ]; then
+            echo "STAGE=prod" >> $GITHUB_ENV
+          elif [ "$BRANCH" = "dev" ]; then
+            echo "STAGE=dev" >> $GITHUB_ENV
+          else
+            echo "STAGE=sandbox" >> $GITHUB_ENV
+          fi
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: gestion-asso-frontend/package-lock.json
+
+      # Installation des dépendances du projet Vite/React
+      - name: Install frontend dependencies
+        working-directory: ./gestion-asso-frontend
+        run: npm ci
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: eu-west-3
+          role-to-assume: arn:aws:iam::011664843444:role/github_pipeline_access
+          role-session-name: site-asso-frontend-ci
+
+      # --- Récupération de l'URL API depuis le stack backend ---
+      # L'URL est lue dynamiquement depuis les outputs CloudFormation
+      # du stack API pour ne pas avoir à la maintenir en dur
+      - name: Get API URL from backend stack
+        run: |
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name site-asso-api-${STAGE} \
+            --query "Stacks[0].Outputs[?OutputKey=='HttpApiUrl'].OutputValue" \
+            --output text)
+
+          if [ "$API_URL" = "None" ] || [ -z "$API_URL" ]; then
+            echo "::error::Impossible de récupérer l'URL API depuis le stack site-asso-api-${STAGE}"
+            exit 1
+          fi
+
+          echo "VITE_API_BASE_URL=${API_URL}" >> $GITHUB_ENV
+          echo "API URL for stage ${STAGE}: ${API_URL}"
+
+      # --- Build Vite ---
+      # VITE_API_BASE_URL est dans GITHUB_ENV, Vite le lit automatiquement
+      # via import.meta.env.VITE_API_BASE_URL
+      - name: Build frontend
+        working-directory: ./gestion-asso-frontend
+        run: npm run build
+
+      # --- Récupération du bucket S3 et du distribution ID ---
+      - name: Get frontend infra outputs
+        run: |
+          BUCKET=$(aws cloudformation describe-stacks \
+            --stack-name site-asso-frontend-${STAGE} \
+            --query "Stacks[0].Outputs[?OutputKey=='FrontendBucketName'].OutputValue" \
+            --output text)
+
+          DIST_ID=$(aws cloudformation describe-stacks \
+            --stack-name site-asso-frontend-${STAGE} \
+            --query "Stacks[0].Outputs[?OutputKey=='FrontendDistributionId'].OutputValue" \
+            --output text)
+
+          if [ "$BUCKET" = "None" ] || [ -z "$BUCKET" ]; then
+            echo "::error::Impossible de récupérer le nom du bucket frontend"
+            exit 1
+          fi
+
+          if [ "$DIST_ID" = "None" ] || [ -z "$DIST_ID" ]; then
+            echo "::error::Impossible de récupérer l'ID de la distribution CloudFront"
+            exit 1
+          fi
+
+          echo "FRONTEND_BUCKET=${BUCKET}" >> $GITHUB_ENV
+          echo "DISTRIBUTION_ID=${DIST_ID}" >> $GITHUB_ENV
+          echo "Bucket: ${BUCKET} | Distribution: ${DIST_ID}"
+
+      # --- Synchronisation vers S3 ---
+      # --delete supprime du bucket les fichiers absents du build
+      # pour ne pas accumuler les anciennes versions
+      - name: Sync build to S3
+        working-directory: ./gestion-asso-frontend
+        run: aws s3 sync dist/ s3://${FRONTEND_BUCKET} --delete
+
+      # --- Invalidation du cache CloudFront ---
+      # On invalide uniquement /index.html car les assets Vite
+      # ont des hash dans le nom (main-abc123.js) et sont donc
+      # automatiquement uniques à chaque build
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${DISTRIBUTION_ID} \
+            --paths "/index.html"

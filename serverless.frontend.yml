@@ -1,0 +1,204 @@
+# ===========================================================================
+# Infra frontend — S3 privé + CloudFront
+#
+# Ce stack gère l'hébergement statique du frontend React/Vite :
+# - Un bucket S3 privé contenant les fichiers du build (HTML, CSS, JS)
+# - Une Origin Access Control (OAC) pour sécuriser l'accès S3
+# - Une distribution CloudFront servant de CDN et point d'entrée HTTPS
+# - Une bucket policy autorisant CloudFront en lecture et le pipeline en écriture
+#
+# Le WAF sera ajouté dans un second temps lors de la mise en production.
+#
+# Déploiement :
+#   npx serverless deploy --config serverless.frontend.yml --stage dev
+# ===========================================================================
+
+service: site-asso-frontend
+frameworkVersion: '4'
+
+org: wolfcorp
+app: site-asso
+
+provider:
+  name: aws
+  region: eu-west-3
+  stage: ${opt:stage, 'dev'}
+
+resources:
+  Resources:
+
+    # -----------------------------------------------------------------------
+    # Bucket S3 — stockage des fichiers statiques du build Vite
+    #
+    # Le bucket est entièrement privé : aucun accès public.
+    # Seuls CloudFront (via OAC) et le pipeline GitHub (via bucket policy)
+    # peuvent y accéder.
+    # -----------------------------------------------------------------------
+    FrontendBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: site-asso-${sls:stage}-frontend
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+        OwnershipControls:
+          Rules:
+            - ObjectOwnership: BucketOwnerEnforced
+
+    # -----------------------------------------------------------------------
+    # Bucket Policy — contrôle d'accès au bucket S3
+    #
+    # Deux types d'accès autorisés :
+    # 1. CloudFront peut LIRE les fichiers (pour les servir aux utilisateurs)
+    # 2. Le pipeline GitHub peut ÉCRIRE et SUPPRIMER (pour déployer le build)
+    # -----------------------------------------------------------------------
+    FrontendBucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket: !Ref FrontendBucket
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+
+            # CloudFront peut lire les objets via l'OAC
+            - Sid: AllowCloudFrontRead
+              Effect: Allow
+              Principal:
+                Service: cloudfront.amazonaws.com
+              Action: s3:GetObject
+              Resource: !Sub "${FrontendBucket.Arn}/*"
+              Condition:
+                StringEquals:
+                  AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${FrontendDistribution}"
+
+            # Le pipeline GitHub peut écrire et supprimer des fichiers
+            - Sid: AllowPipelineWrite
+              Effect: Allow
+              Principal:
+                AWS: arn:aws:iam::011664843444:role/github_pipeline_access
+              Action:
+                - s3:PutObject
+                - s3:DeleteObject
+              Resource: !Sub "${FrontendBucket.Arn}/*"
+
+            # Le pipeline GitHub peut lister le bucket (nécessaire pour aws s3 sync --delete)
+            - Sid: AllowPipelineList
+              Effect: Allow
+              Principal:
+                AWS: arn:aws:iam::011664843444:role/github_pipeline_access
+              Action: s3:ListBucket
+              Resource: !GetAtt FrontendBucket.Arn
+
+    # -----------------------------------------------------------------------
+    # Origin Access Control (OAC) — sécurise le lien CloudFront → S3
+    #
+    # Mécanisme moderne (remplace l'ancien OAI) qui force CloudFront
+    # à signer chaque requête vers S3 avec SigV4.
+    # Résultat : personne ne peut accéder au bucket directement via son URL S3.
+    # -----------------------------------------------------------------------
+    FrontendOAC:
+      Type: AWS::CloudFront::OriginAccessControl
+      Properties:
+        OriginAccessControlConfig:
+          Name: site-asso-${sls:stage}-frontend-oac
+          Description: "OAC pour le bucket frontend site-asso ${sls:stage}"
+          OriginAccessControlOriginType: s3
+          SigningBehavior: always
+          SigningProtocol: sigv4
+
+    # -----------------------------------------------------------------------
+    # Distribution CloudFront — CDN et point d'entrée HTTPS
+    #
+    # Sert les fichiers statiques depuis les edge locations AWS les plus
+    # proches de l'utilisateur. Gère le HTTPS, le cache et la compression.
+    #
+    # Configuration SPA importante :
+    # Les CustomErrorResponses redirigent les 403/404 vers /index.html
+    # pour que react-router gère le routing côté client.
+    # Sans ça, un refresh sur /dashboard renverrait une erreur S3.
+    # -----------------------------------------------------------------------
+    FrontendDistribution:
+      Type: AWS::CloudFront::Distribution
+      Properties:
+        DistributionConfig:
+          Enabled: true
+          Comment: "Frontend site-asso — ${sls:stage}"
+          DefaultRootObject: index.html
+          Origins:
+            - Id: S3Origin
+              DomainName: !GetAtt FrontendBucket.RegionalDomainName
+              OriginAccessControlId: !GetAtt FrontendOAC.Id
+              # S3OriginConfig est obligatoire pour que CloudFormation
+              # identifie l'origin comme un bucket S3 (et non un serveur HTTP).
+              # OriginAccessIdentity est vide car on utilise l'OAC, pas l'ancien OAI.
+              S3OriginConfig:
+                OriginAccessIdentity: ""
+
+          # Comportement de cache par défaut
+          DefaultCacheBehavior:
+            TargetOriginId: S3Origin
+            # Redirige automatiquement HTTP vers HTTPS
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS]
+            CachedMethods: [GET, HEAD]
+            # Active la compression Brotli/Gzip automatique
+            Compress: true
+            # CachingOptimized — politique de cache managée par AWS
+            # ID fixe : 658327ea-f89d-4fab-a63d-7e88639e58f6
+            # TTL par défaut de 24h, respecte les Cache-Control headers
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+
+          # Gestion des erreurs pour le SPA (Single Page Application)
+          # S3 renvoie 403 quand le fichier n'existe pas (bucket privé).
+          # On redirige vers index.html avec un 200 pour que react-router
+          # prenne le relais côté client.
+          CustomErrorResponses:
+            - ErrorCode: 403
+              ResponseCode: 200
+              ResponsePagePath: /index.html
+              ErrorCachingMinTTL: 0
+            - ErrorCode: 404
+              ResponseCode: 200
+              ResponsePagePath: /index.html
+              ErrorCachingMinTTL: 0
+
+          # Pas de restriction géographique
+          Restrictions:
+            GeoRestriction:
+              RestrictionType: none
+
+          # Certificat SSL par défaut (domaine *.cloudfront.net)
+          # Pour un domaine custom : ajouter un certificat ACM (us-east-1)
+          # et configurer Aliases + ViewerCertificate
+          ViewerCertificate:
+            CloudFrontDefaultCertificate: true
+
+  # -------------------------------------------------------------------------
+  # Outputs — valeurs exportées pour le pipeline CI/CD
+  #
+  # Le pipeline ci-frontend.yml utilise ces valeurs pour :
+  # - Savoir dans quel bucket pousser le build (FrontendBucketName)
+  # - Invalider le cache après déploiement (FrontendDistributionId)
+  # - Afficher l'URL du site (FrontendDomainName)
+  # -------------------------------------------------------------------------
+  Outputs:
+
+    FrontendBucketName:
+      Description: "Nom du bucket S3 contenant les fichiers frontend"
+      Value: !Ref FrontendBucket
+      Export:
+        Name: site-asso-frontend-${sls:stage}-BucketName
+
+    FrontendDistributionId:
+      Description: "ID de la distribution CloudFront (pour l'invalidation de cache)"
+      Value: !Ref FrontendDistribution
+      Export:
+        Name: site-asso-frontend-${sls:stage}-DistributionId
+
+    FrontendDomainName:
+      Description: "URL publique du frontend (domaine CloudFront)"
+      Value: !GetAtt FrontendDistribution.DomainName
+      Export:
+        Name: site-asso-frontend-${sls:stage}-DomainName
