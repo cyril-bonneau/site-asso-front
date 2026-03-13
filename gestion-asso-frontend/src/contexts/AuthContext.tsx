@@ -286,7 +286,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       isCancelledRef.current = true;
       cancelProactiveRefreshTimer();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -313,7 +313,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     });
 
     setStatus("authenticated");
-
+    console.log("DEBUG: status set to authenticated", response);
     // Planifier le refresh proactif via la ref pour éviter la closure périmée
     scheduleProactiveRefreshRef.current?.(response.accessToken);
   }, []);
@@ -399,7 +399,7 @@ export function useAuth(): AuthContextValue {
   if (context === null) {
     throw new Error(
       "useAuth() doit être utilisé à l'intérieur d'un composant <AuthProvider>. " +
-        "Vérifiez que AuthProvider entoure bien votre arborescence de composants dans App.tsx."
+      "Vérifiez que AuthProvider entoure bien votre arborescence de composants dans App.tsx."
     );
   }
 
