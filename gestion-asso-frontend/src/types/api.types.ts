@@ -22,35 +22,50 @@ export type ApiResponse<TData> = {
 
 /**
  * Réponse renvoyée par les endpoints /login et /registerUser.
- * Contient l'access token JWT ainsi que les informations de profil complètes
- * de l'utilisateur, permettant d'alimenter le contexte Auth dès la connexion.
+ *
+ * Ne contient que les données de session nécessaires à l'authentification :
+ * l'access token JWT (qui encode userId et privilege dans son payload)
+ * et l'userId en clair pour les cas où le décodage JWT échouerait.
+ *
+ * Les données personnelles (prénom, nom, email) sont volontairement absentes
+ * de ce flux — principe de minimisation RGPD. Elles sont récupérées
+ * séparément via GET /user par les composants qui en ont besoin.
  */
 export type AuthSuccessResponse = {
   ok: true;
   userId: string;
   message: string;
   accessToken: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  /** Liste des rôles de l'utilisateur (ex: ["USER"] ou ["USER", "ADMIN"]) */
-  privilege: string[];
 };
 
 /**
- * Réponse renvoyée par l'endpoint GET /refreshToken.
- * Contient un nouvel access token et les informations de profil complètes,
- * ce qui évite un appel supplémentaire pour récupérer le profil après le refresh.
+ * Réponse renvoyée par l'endpoint POST /refresh.
+ *
+ * Même principe que AuthSuccessResponse : seules les données de session
+ * sont retournées, pas les données personnelles.
  */
 export type RefreshTokenResponse = {
+  ok: true;
   userId: string;
   message: string;
   accessToken: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  /** Liste des rôles de l'utilisateur (ex: ["USER"] ou ["USER", "ADMIN"]) */
-  privilege: string[];
+};
+
+/**
+ * Réponse renvoyée par GET /user (endpoint protégé, rôle USER requis).
+ *
+ * Contient les données personnelles de l'utilisateur connecté.
+ * C'est le seul endpoint qui retourne ces données — toute autre réponse
+ * (login, refresh) ne les inclut pas.
+ */
+export type UserProfileResponse = {
+  ok: true;
+  data: {
+    email: string;
+    firstName: string;
+    lastName: string;
+    updatedAt: string;
+  };
 };
 
 // ---------------------------------------------------------------------------

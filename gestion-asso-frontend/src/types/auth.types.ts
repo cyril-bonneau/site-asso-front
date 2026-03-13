@@ -22,20 +22,24 @@ export type UserPrivilege = "USER" | "ADMIN";
 
 /**
  * Représentation d'un utilisateur authentifié dans le contexte React.
- * Les champs optionnels peuvent ne pas être disponibles immédiatement
- * (ex: juste après un refresh token silencieux, avant un appel profil).
+ *
+ * Contient uniquement les données de session extraites du JWT :
+ * - userId : identifiant de l'utilisateur
+ * - privilege : liste des rôles (pour le contrôle d'accès)
+ *
+ * Les données personnelles (email, prénom, nom) sont volontairement absentes
+ * — principe de minimisation RGPD. Elles sont récupérées à la demande
+ * via useUserProfile() qui appelle GET /user.
  */
 export type AuthUser = {
+  /** Identifiant unique de l'utilisateur */
   userId: string;
-  email?: string;
-  firstName?: string;
-  lastName?: string;
   /**
-   * Liste des rôles de l'utilisateur tels que renvoyés par le backend.
+   * Liste des rôles de l'utilisateur tels qu'encodés dans le JWT.
    * Exemple : ["USER"] ou ["USER", "ADMIN"]
    * Utiliser UserPrivilege pour valider un rôle spécifique.
    */
-  privilege?: string[];
+  privilege: string[];
 };
 
 // ---------------------------------------------------------------------------

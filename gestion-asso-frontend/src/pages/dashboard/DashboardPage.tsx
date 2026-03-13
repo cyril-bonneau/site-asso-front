@@ -9,6 +9,7 @@
  */
 
 import { useAuth } from "@/contexts/AuthContext";
+import { useUserProfile } from "@/hooks/useUserProfile";
 
 /**
  * Page principale affichée après connexion.
@@ -16,9 +17,10 @@ import { useAuth } from "@/contexts/AuthContext";
  */
 export function DashboardPage() {
   const { user } = useAuth();
+  const { profile } = useUserProfile();
 
-  // Préférence d'affichage : prénom si disponible, sinon userId comme identifiant de secours
-  const displayName = user?.firstName ?? user?.userId ?? "utilisateur";
+  // Préférence d'affichage : prénom via profil si disponible, sinon userId comme identifiant de secours
+  const displayName = profile?.firstName ?? user?.userId ?? "utilisateur";
 
   return (
     <div className="flex flex-col gap-6">

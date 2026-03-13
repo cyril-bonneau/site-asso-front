@@ -13,6 +13,7 @@
 import { Outlet, NavLink, Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
+import { useUserProfile } from "@/hooks/useUserProfile";
 
 /**
  * Layout complet pour les utilisateurs authentifiés.
@@ -20,6 +21,7 @@ import { useTheme } from "@/contexts/ThemeContext";
  */
 export function MainLayout() {
   const { user, logout } = useAuth();
+  const { profile } = useUserProfile();
   const { isDark, toggle } = useTheme();
   const navigate = useNavigate();
 
@@ -49,15 +51,14 @@ export function MainLayout() {
         {/* Informations utilisateur + toggle thème + bouton déconnexion */}
         <div className="flex items-center gap-3">
           {/*
-           * Affichage du nom de l'utilisateur dans l'ordre de priorité :
-           * 1. Prénom + Nom si les deux sont disponibles
-           * 2. Email seul sinon
-           * 3. userId en dernier recours
+           * Affichage du nom de l'utilisateur :
+           * - Prénom + Nom via useUserProfile() une fois le profil chargé
+           * - userId en attendant ou en cas d'échec du chargement du profil
            */}
           <span className="hidden text-sm text-slate-600 dark:text-slate-300 sm:block">
-            {user?.firstName !== undefined && user?.lastName !== undefined
-              ? `${user.firstName} ${user.lastName}`
-              : (user?.email ?? user?.userId ?? "Utilisateur")}
+            {profile !== undefined
+              ? `${profile.firstName} ${profile.lastName}`
+              : (user?.userId ?? "Utilisateur")}
           </span>
 
           {/* Bouton bascule clair/sombre */}

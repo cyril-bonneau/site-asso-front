@@ -9,6 +9,11 @@
  * - Il planifie un refresh proactif avant l'expiration de l'access token
  *   pour éviter un logout brutal en milieu d'action
  *
+ * RGPD — Séparation des responsabilités :
+ * Ce contexte ne gère QUE la session (userId + privilege extraits du JWT).
+ * Les données personnelles (prénom, nom, email) sont récupérées séparément
+ * via useUserProfile() → GET /user, uniquement par les composants qui en ont besoin.
+ *
  * L'access token JWT est stocké exclusivement en mémoire via tokenStore —
  * JAMAIS dans localStorage ou sessionStorage (protection XSS).
  */
@@ -25,51 +30,13 @@ import {
 import { ACCESS_TOKEN_REFRESH_MARGIN_MS, MAX_SILENT_REFRESH_RETRIES } from "@/config";
 import { authService, HttpError } from "@/services";
 import type { AuthStatus, AuthUser, LoginPayload, RegisterPayload } from "@/types";
-import { clearAccessToken, getAccessToken, setAccessToken } from "@/utils/tokenStore";
-
-// ---------------------------------------------------------------------------
-// Utilitaire : lecture du claim "exp" d'un JWT
-// ---------------------------------------------------------------------------
-
-/**
- * Extrait le timestamp d'expiration (claim "exp") d'un JWT access token.
- *
- * Cette fonction ne vérifie PAS la signature du token — elle se contente
- * de lire le payload base64url pour planifier un refresh avant expiration.
- * La vérification cryptographique de la signature est effectuée côté backend.
- *
- * @param token - JWT access token (format "header.payload.signature")
- * @returns Timestamp d'expiration en millisecondes depuis epoch, ou null si non lisible
- */
-function getTokenExpirationMs(token: string): number | null {
-  try {
-    // Un JWT est composé de 3 parties séparées par "."
-    const parts = token.split(".");
-    if (parts.length !== 3 || parts[1] === undefined) return null;
-
-    // Décodage base64url → base64 standard → JSON
-    // base64url remplace "+" par "-" et "/" par "_"
-    const base64Standard = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const payloadJson = atob(base64Standard);
-    const payload: unknown = JSON.parse(payloadJson);
-
-    // Extraction du claim "exp" (secondes depuis epoch)
-    if (
-      typeof payload === "object" &&
-      payload !== null &&
-      "exp" in payload &&
-      typeof (payload as { exp: unknown }).exp === "number"
-    ) {
-      // Conversion en millisecondes pour comparaison avec Date.now()
-      return (payload as { exp: number }).exp * 1000;
-    }
-
-    return null;
-  } catch {
-    // Token malformé ou payload non-JSON : on ne peut pas planifier de refresh
-    return null;
-  }
-}
+import {
+  clearAccessToken,
+  decodeAccessTokenPayload,
+  getAccessToken,
+  getTokenExpirationMs,
+  setAccessToken,
+} from "@/utils/tokenStore";
 
 // ---------------------------------------------------------------------------
 // Forme du contexte exposé aux composants enfants
@@ -203,12 +170,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
           if (isCancelledRef.current) return;
 
           setAccessToken(response.accessToken);
+
+          // Extraire userId et privilege du payload JWT
+          const decoded = decodeAccessTokenPayload(response.accessToken);
           setUser({
-            userId: response.userId,
-            firstName: response.firstName,
-            lastName: response.lastName,
-            email: response.email,
-            privilege: response.privilege,
+            userId: decoded?.userId ?? response.userId,
+            privilege: decoded?.privilege ?? [],
           });
 
           // Replanifier un refresh pour le nouveau token
@@ -251,15 +218,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // Si le composant a été démonté entre-temps, on abandonne
         if (isCancelledRef.current) return;
 
-        // Succès : stocker le token et le profil, puis planifier le prochain refresh
+        // Succès : stocker le token, extraire les claims du JWT, planifier le prochain refresh
         setAccessToken(response.accessToken);
+
+        const decoded = decodeAccessTokenPayload(response.accessToken);
         setUser({
-          userId: response.userId,
-          firstName: response.firstName,
-          lastName: response.lastName,
-          email: response.email,
-          privilege: response.privilege,
+          userId: decoded?.userId ?? response.userId,
+          privilege: decoded?.privilege ?? [],
         });
+
         setStatus("authenticated");
         scheduleProactiveRefresh(response.accessToken);
       } catch (error) {
@@ -286,7 +253,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       isCancelledRef.current = true;
       cancelProactiveRefreshTimer();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -303,17 +270,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Stockage du token en mémoire (jamais en localStorage)
     setAccessToken(response.accessToken);
 
-    // Stockage du profil complet pour éviter un appel supplémentaire au backend
+    // Extraction des claims de session depuis le payload JWT
+    const decoded = decodeAccessTokenPayload(response.accessToken);
     setUser({
-      userId: response.userId,
-      firstName: response.firstName,
-      lastName: response.lastName,
-      email: response.email,
-      privilege: response.privilege,
+      userId: decoded?.userId ?? response.userId,
+      privilege: decoded?.privilege ?? [],
     });
 
     setStatus("authenticated");
-    console.log("DEBUG: status set to authenticated", response);
+
     // Planifier le refresh proactif via la ref pour éviter la closure périmée
     scheduleProactiveRefreshRef.current?.(response.accessToken);
   }, []);
@@ -328,13 +293,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Stockage du token en mémoire (jamais en localStorage)
     setAccessToken(response.accessToken);
 
-    // Stockage du profil complet renvoyé à la création du compte
+    // Extraction des claims de session depuis le payload JWT
+    const decoded = decodeAccessTokenPayload(response.accessToken);
     setUser({
-      userId: response.userId,
-      firstName: response.firstName,
-      lastName: response.lastName,
-      email: response.email,
-      privilege: response.privilege,
+      userId: decoded?.userId ?? response.userId,
+      privilege: decoded?.privilege ?? [],
     });
 
     setStatus("authenticated");
@@ -399,7 +362,7 @@ export function useAuth(): AuthContextValue {
   if (context === null) {
     throw new Error(
       "useAuth() doit être utilisé à l'intérieur d'un composant <AuthProvider>. " +
-      "Vérifiez que AuthProvider entoure bien votre arborescence de composants dans App.tsx."
+        "Vérifiez que AuthProvider entoure bien votre arborescence de composants dans App.tsx."
     );
   }
 

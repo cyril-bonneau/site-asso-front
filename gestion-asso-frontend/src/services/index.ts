@@ -11,3 +11,4 @@
 export { httpClient, HttpError } from "./httpClient";
 export * as authService from "./authService";
 export * as associationService from "./associationService";
+export * as userService from "./userService";
